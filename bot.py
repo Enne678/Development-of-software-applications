@@ -106,7 +106,7 @@ async def process_convert_amount(message: Message, state: FSMContext):
 
 # Удаляем возможный вебхук и запускаем долгий опрос (polling) обновлений
 async def main():
-    await dp.start_polling(bot)  # aiogram 3: рекомендуемый запуск 6
+    await dp.start_polling(bot)
 
 if __name__ == "__main__":
     asyncio.run(main())
