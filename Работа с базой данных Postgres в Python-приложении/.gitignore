@@ -1,1 +1,7 @@
 .env
+# SQLite-файл локальной БД
+database.db
+
+# Python‑cache
+pycache/
+*.py[cod]
