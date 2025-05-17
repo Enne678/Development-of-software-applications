@@ -1,15 +1,20 @@
-import aiosqlite
+import os
 import asyncio
-from db import DB_PATH
+import asyncpg
+from dotenv import load_dotenv
+
+load_dotenv()
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 async def add_admin(chat_id: str):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            "INSERT OR IGNORE INTO admins(chat_id) VALUES(?)",
-            (chat_id,)
-        )
-        await db.commit()
-        print(f"Added admin {chat_id}")
+    conn = await asyncpg.connect(DATABASE_URL)
+    await conn.execute("""
+        INSERT INTO admins(chat_id)
+        VALUES($1)
+        ON CONFLICT (chat_id) DO NOTHING
+    """, chat_id)
+    await conn.close()
+    print(f"Администратор {chat_id} добавлен (или уже существует).")
 
 if __name__ == "__main__":
     chat_id = input("Введите ваш chat_id: ").strip()
