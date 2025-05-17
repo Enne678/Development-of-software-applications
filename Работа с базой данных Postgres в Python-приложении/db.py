@@ -1,34 +1,38 @@
-import aiosqlite
 import os
+import asyncpg
 from dotenv import load_dotenv
 
-# Загружаем .env (нужен только для любого будущего расширения)
 load_dotenv()
-# Путь к файлу базы (он создастся рядом с этим скриптом)
-DB_PATH = os.path.join(os.path.dirname(__file__), "database.db")
+
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 
 async def init_db():
     """
-    Создаёт файл SQLite (если нет) и две таблицы:
-    - currencies(id, currency_name, rate)
-    - admins(id, chat_id)
+    Создаёт таблицы currencies и admins в PostgreSQL.
     """
-    # Открываем соединение с базой
-    async with aiosqlite.connect(DB_PATH) as db:
-        # Всегда приводим имена валют к верхнему регистру при сравнении
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS currencies (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                currency_name TEXT NOT NULL UNIQUE,
-                rate REAL NOT NULL
-            );
-        """)
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS admins (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                chat_id TEXT NOT NULL UNIQUE
-            );
-        """)
-        # Фиксируем изменения на диске
-        await db.commit()
+    conn = await asyncpg.connect(DATABASE_URL)
+
+    await conn.execute("""
+        CREATE TABLE IF NOT EXISTS currencies (
+            id SERIAL PRIMARY KEY,
+            currency_name TEXT NOT NULL UNIQUE,
+            rate NUMERIC NOT NULL
+        );
+    """)
+
+    await conn.execute("""
+        CREATE TABLE IF NOT EXISTS admins (
+            id SERIAL PRIMARY KEY,
+            chat_id TEXT NOT NULL UNIQUE
+        );
+    """)
+
+    await conn.close()
+
+
+async def get_pool():
+    """
+    Создаёт и возвращает пул соединений.
+    """
+    return await asyncpg.create_pool(DATABASE_URL)
