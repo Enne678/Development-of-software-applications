@@ -1,1 +1,11 @@
+# Игнорировать все .env
 .env
+
+# SQLite-базы
+*.db
+
+# Python‑cache
+pycache/
+*.py[cod]
+
+requirements.txt

@@ -1,74 +1,168 @@
-# Импорт FastAPI, Pydantic, SQLAlchemy-моделей и схем
 from fastapi import FastAPI, HTTPException, Depends
-from pydantic import BaseModel, condecimal
+from pydantic import BaseModel, condecimal, Field
 from sqlalchemy.orm import Session
+from typing import Optional
+import uvicorn
+import logging
 
-# Импорт конфигурации БД и базового класса
-import database
-from database import Base, engine, SessionLocal
+# Импорт конфигурации БД
+from database import Base, engine, get_db, Currency
 
-# Определение модели таблицы currencies
-from sqlalchemy import Column, Integer, String, Numeric
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
 
-class Currency(Base):
-    __tablename__ = "currencies"
-    id = Column(Integer, primary_key=True, index=True)
-    currency_name = Column(String(50), unique=True, index=True, nullable=False)
-    rate = Column(Numeric(18,6), nullable=False)
-
-# Создание таблицы при старте приложения
-Base.metadata.create_all(bind=engine)
 
 # Pydantic-схемы для запросов
 class CurrencyCreate(BaseModel):
-    currency_name: str
-    rate: condecimal(max_digits=18, decimal_places=6)
+    currency_name: str = Field(..., examples=["USD"])
+    rate: condecimal(max_digits=18, decimal_places=6) = Field(..., examples=[75.50])
+
 
 class CurrencyUpdate(BaseModel):
-    currency_name: str
-    rate: condecimal(max_digits=18, decimal_places=6)
+    currency_name: str = Field(..., examples=["USD"])
+    rate: condecimal(max_digits=18, decimal_places=6) = Field(..., examples=[76.00])
+
 
 class CurrencyDelete(BaseModel):
-    currency_name: str
+    currency_name: str = Field(..., examples=["USD"])
+
+
+class StatusResponse(BaseModel):
+    status: str
+    message: str
+    currency_id: Optional[int] = None
+
 
 # Создаём приложение FastAPI
-app = FastAPI(title="Currency Manager")
+app = FastAPI(title="Currency Manager Service", version="1.0.0")
 
-# Зависимость: получение сессии БД
-def get_db():
-    db = SessionLocal()
+
+# Создание таблицы при старте приложения
+@app.on_event("startup")
+async def startup_event():
     try:
-        yield db
-    finally:
-        db.close()
+        logger.info("Creating database tables...")
+        Base.metadata.create_all(bind=engine)
+        logger.info("✅ Database tables created successfully.")
+    except Exception as e:
+        logger.error(f"❌ Error creating database tables: {e}")
 
-# Эндпоинт загрузки новой валюты
-@app.post("/load", status_code=200)
+
+@app.get("/")
+async def root():
+    return {"message": "Currency Manager Service is running"}
+
+
+# Эндпоинт POST /load
+@app.post("/load", response_model=StatusResponse, status_code=200)
 def load_currency(data: CurrencyCreate, db: Session = Depends(get_db)):
-    exists = db.query(Currency).filter_by(currency_name=data.currency_name).first()
-    if exists:
-        raise HTTPException(status_code=400, detail="Currency exists")
-    curr = Currency(currency_name=data.currency_name, rate=data.rate)
-    db.add(curr)
-    db.commit()
-    return {"status": "OK"}
+    """Добавление новой валюты в базу данных"""
+    currency_name_upper = data.currency_name.upper()
+    try:
+        # 1. Проверка того, что такой валюты нет в БД
+        existing_currency = db.query(Currency).filter(
+            Currency.currency_name == currency_name_upper
+        ).first()
 
-# Эндпоинт обновления курса валюты
-@app.post("/update_currency", status_code=200)
-def update_currency(data: CurrencyUpdate, db: Session = Depends(get_db)):
-    curr = db.query(Currency).filter_by(currency_name=data.currency_name).first()
-    if not curr:
-        raise HTTPException(status_code=404, detail="Currency not found")
-    curr.rate = data.rate
-    db.commit()
-    return {"status": "OK"}
+        if existing_currency:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Currency {currency_name_upper} already exists"
+            )
 
-# Эндпоинт удаления валюты
-@app.post("/delete", status_code=200)
-def delete_currency(data: CurrencyDelete, db: Session = Depends(get_db)):
-    curr = db.query(Currency).filter_by(currency_name=data.currency_name).first()
-    if not curr:
-        raise HTTPException(status_code=404, detail="Currency not found")
-    db.delete(curr)
-    db.commit()
-    return {"status": "OK"}
+        # 2. Выполняется сохранение валюты в таблицу currencies
+        new_currency = Currency(
+            currency_name=currency_name_upper,
+            rate=data.rate
+        )
+
+        db.add(new_currency)
+        db.commit()
+        db.refresh(new_currency)
+
+        # 3. Возвращается ответ 200 ОК
+        return {
+            "status": "OK",
+            "message": f"Currency {currency_name_upper} successfully added",
+            "currency_id": new_currency.id
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Database error: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+# Эндпоинт POST /update_currency
+@app.post("/update_currency", response_model=StatusResponse, status_code=200)
+def update_currency_rate(data: CurrencyUpdate, db: Session = Depends(get_db)):
+    """Обновление курса существующей валюты"""
+    currency_name_upper = data.currency_name.upper()
+    try:
+        # 1. Проверка того, что такая валюта существует в БД
+        currency = db.query(Currency).filter(
+            Currency.currency_name == currency_name_upper
+        ).first()
+
+        if not currency:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Currency {currency_name_upper} not found"
+            )
+
+        # 2. Выполняется обновление данных валюты в таблицу currencies
+        old_rate = currency.rate
+        currency.rate = data.rate
+        db.commit()
+
+        # 3. Возвращается ответ 200 ОК
+        return {
+            "status": "OK",
+            "message": f"Currency {currency_name_upper} rate updated from {old_rate} to {data.rate}"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Database error: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+# Эндпоинт POST /delete
+@app.post("/delete", response_model=StatusResponse, status_code=200)
+def delete_currency_entry(data: CurrencyDelete, db: Session = Depends(get_db)):
+    """Удаление валюты из базы данных"""
+    currency_name_upper = data.currency_name.upper()
+    try:
+        # 1. Проверка того, что такая валюта существует в БД
+        currency = db.query(Currency).filter(
+            Currency.currency_name == currency_name_upper
+        ).first()
+
+        if not currency:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Currency {currency_name_upper} not found"
+            )
+
+        # 2. Выполняется удаление валюты из таблицы currencies
+        db.delete(currency)
+        db.commit()
+
+        # 3. Возвращается ответ 200 ОК
+        return {
+            "status": "OK",
+            "message": f"Currency {currency_name_upper} successfully deleted"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Database error: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+if __name__ == "__main__":
+    # Микросервис запускается на порту 5001
+    uvicorn.run(app, host="0.0.0.0", port=5001, log_level="info")
