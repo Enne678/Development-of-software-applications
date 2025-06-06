@@ -1,0 +1,44 @@
+Чек-лист для тестирования функции get_triangle_type
+
+ Позитивное тестирование
+
+  Равносторонний треугольник (equilateral)
+- (3, 3, 3) → "equilateral"
+- (1, 1, 1) → "equilateral"
+- (5.5, 5.5, 5.5) → "equilateral"
+
+  Равнобедренный треугольник (isosceles)
+- (3, 3, 2) → "isosceles"
+- (5, 4, 5) → "isosceles"
+- (4, 7, 7) → "isosceles"
+- (2.5, 2.5, 4) → "isosceles"
+
+  Разносторонний треугольник (nonequilateral)
+- (3, 4, 5) → "nonequilateral"
+- (2, 3, 4) → "nonequilateral"
+- (6, 8, 10) → "nonequilateral"
+- (1.5, 2.5, 3) → "nonequilateral"
+
+ Негативное тестирование
+
+  Нарушение неравенства треугольника
+- (1, 1, 3) → IncorrectTriangleSides
+- (2, 3, 6) → IncorrectTriangleSides
+- (1, 2, 3) → IncorrectTriangleSides
+- (0, 5, 5) → IncorrectTriangleSides
+
+  Отрицательные стороны
+- (-1, 2, 3) → IncorrectTriangleSides
+- (1, -2, 3) → IncorrectTriangleSides
+- (1, 2, -3) → IncorrectTriangleSides
+- (-1, -2, -3) → IncorrectTriangleSides
+
+  Нулевые стороны
+- (0, 2, 3) → IncorrectTriangleSides
+- (1, 0, 3) → IncorrectTriangleSides
+- (1, 2, 0) → IncorrectTriangleSides
+- (0, 0, 0) → IncorrectTriangleSides
+
+  Граничные случаи
+- (1, 1, 2) → IncorrectTriangleSides (вырожденный треугольник)
+- (2, 3, 5) → IncorrectTriangleSides (вырожденный треугольник)
